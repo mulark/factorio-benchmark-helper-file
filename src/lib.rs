@@ -154,7 +154,7 @@ impl Not for ProcedureOverwrite {
 }
 
 
-fn load_top_level_from_file(file: &Path) -> Result<TopLevel,ProcedureError> {
+pub fn load_top_level_from_file(file: &Path) -> Result<TopLevel,ProcedureError> {
     if file.exists() {
         if let Ok(bytes) = &read(file) {
             if let Ok(json) = serde_json::from_slice(bytes) {

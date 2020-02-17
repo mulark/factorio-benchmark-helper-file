@@ -116,6 +116,7 @@ pub enum ProcedureError {
     FileNotFound,
     MalformedJSON,
     UnknownReadError,
+    SetNotPresent,
 }
 
 #[derive(Debug, PartialEq)]
@@ -182,17 +183,17 @@ impl FromStr for ProcedureKind {
     }
 }
 
-/// Reads a benchmark set from a file, returning None if the file doesn't exist or doesn't contain the supplied benchmark set
+/// Reads a benchmark set from a file, returning Err if the file doesn't exist or doesn't contain the supplied benchmark set
 pub fn read_benchmark_set_from_file(
     name: &str,
     file: &Path,
-) -> Option<BenchmarkSet> {
-    if let Ok(m) = load_top_level_from_file(file) {
-        if m.benchmark_sets.contains_key(name) {
-            return Some(m.benchmark_sets[name].clone());
-        }
+) -> Result<BenchmarkSet,ProcedureError> {
+    let m = load_top_level_from_file(file)?;
+    if m.benchmark_sets.contains_key(name) {
+        Ok(m.benchmark_sets[name].clone())
+    } else {
+        Err(ProcedureError::SetNotPresent)
     }
-    None
 }
 
 /// Writes a benchmark set to a file, if supplied file does not exist it will created
@@ -221,18 +222,18 @@ pub fn write_benchmark_set_to_file(
     Ok(())
 }
 
-pub fn read_meta_from_file(name: &str, file: &Path) -> Option<BTreeSet<String>> {
-    match load_top_level_from_file(&file) {
-        Ok(m) => {
-            if m.meta_sets.contains_key(name) {
-                return Some(m.meta_sets[name].clone());
-            }
-        }
-        _ => return None,
+/// Reads the immediate members of this meta set. No recursion to meta sets
+/// that are a child of this meta set.
+pub fn read_meta_from_file(name: &str, file: &Path) -> Result<BTreeSet<String>,ProcedureError> {
+    let m = load_top_level_from_file(&file)?;
+    if m.meta_sets.contains_key(name) {
+        Ok(m.meta_sets[name].clone())
+    } else {
+        Err(ProcedureError::SetNotPresent)
     }
-    None
 }
 
+/// Writes a meta set to file. If the file doesn't exist it will be created.
 pub fn write_meta_to_file(
     name: &str,
     members: BTreeSet<String>,
@@ -255,17 +256,18 @@ pub fn write_meta_to_file(
     Ok(())
 }
 
-// Returns a hashmap of all benchmark sets contained within this meta set, as well as the meta sets
-// found recursively within meta sets contained within this meta set.
-pub fn get_sets_from_meta(
-    meta_set_key: String,
+/// Returns a hashmap of all benchmark sets contained within this meta set, as well
+/// as any benchmark sets found recursively within any meta sets contained within
+/// this meta set.
+pub fn get_benchmarks_from_meta(
+    meta_set_key: &str,
     file: &Path,
-) -> HashMap<String, BenchmarkSet> {
+) -> Result<HashMap<String, BenchmarkSet>,ProcedureError> {
     let mut current_sets = HashMap::new();
     let mut seen_keys = Vec::new();
-    let top_level = load_top_level_from_file(&file).unwrap();
-    walk_meta_recursive_for_benchmarks(meta_set_key, &top_level, &mut seen_keys, &mut current_sets);
-    current_sets
+    let top_level = load_top_level_from_file(&file)?;
+    walk_meta_recursive_for_benchmarks(meta_set_key.to_string(), &top_level, &mut seen_keys, &mut current_sets);
+    Ok(current_sets)
 }
 
 fn walk_meta_recursive_for_benchmarks(
@@ -292,15 +294,16 @@ fn walk_meta_recursive_for_benchmarks(
     }
 }
 
+/// Returns all meta sets that are a part of this meta set, recursively
 pub fn get_metas_from_meta(
-    meta_set_key: String,
+    meta_set_key: &str,
     file: &Path,
-) -> Result<Vec<String>,ProcedureError> {
-    let mut seen_keys = Vec::new();
-    let mut current_meta_sets = Vec::new();
+) -> Result<BTreeSet<String>,ProcedureError> {
+    let mut seen_keys = BTreeSet::new();
+    let mut current_meta_sets = BTreeSet::new();
     let top_level = load_top_level_from_file(&file)?;
     walk_meta_recursive_for_metas(
-        meta_set_key,
+        meta_set_key.to_string(),
         &top_level,
         &mut seen_keys,
         &mut current_meta_sets,
@@ -311,14 +314,14 @@ pub fn get_metas_from_meta(
 fn walk_meta_recursive_for_metas(
     key: String,
     top_level: &TopLevel,
-    seen_keys: &mut Vec<String>,
-    current_meta_sets: &mut Vec<String>,
+    seen_keys: &mut BTreeSet<String>,
+    current_meta_sets: &mut BTreeSet<String>,
 ) {
     if !seen_keys.contains(&key) && top_level.meta_sets.contains_key(&key) {
-        seen_keys.push(key.clone());
+        seen_keys.insert(key.clone());
         for k in &top_level.meta_sets[&key] {
             walk_meta_recursive_for_metas(k.to_string(), &top_level, seen_keys, current_meta_sets);
         }
-        current_meta_sets.push(key);
+        current_meta_sets.insert(key);
     }
 }

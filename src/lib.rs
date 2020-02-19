@@ -1,3 +1,4 @@
+use std::fs::read_to_string;
 use std::collections::HashMap;
 use core::str::FromStr;
 use std::fs::read;
@@ -110,7 +111,7 @@ impl PartialEq for Mod {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ProcedureError {
     ProcedureAlreadyExists,
     FileNotFound,
@@ -119,7 +120,7 @@ pub enum ProcedureError {
     SetNotPresent,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ProcedureKind {
     Benchmark,
     Meta,
@@ -154,15 +155,18 @@ impl Not for ProcedureOverwrite {
     }
 }
 
+pub fn load_top_level(s: &str) -> Result<TopLevel, ProcedureError> {
+    if let Ok(json) = serde_json::from_str(s) {
+        Ok(json)
+    } else {
+        Err(ProcedureError::MalformedJSON)
+    }
+}
 
 pub fn load_top_level_from_file(file: &Path) -> Result<TopLevel,ProcedureError> {
     if file.exists() {
-        if let Ok(bytes) = &read(file) {
-            if let Ok(json) = serde_json::from_slice(bytes) {
-                Ok(json)
-            } else {
-                Err(ProcedureError::MalformedJSON)
-            }
+        if let Ok(s) = &read_to_string(file) {
+            load_top_level(s)
         } else {
             Err(ProcedureError::UnknownReadError)
         }
